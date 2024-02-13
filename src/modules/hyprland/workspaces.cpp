@@ -188,6 +188,12 @@ void Workspaces::initializeWorkspaces() {
   auto const workspacesJson = gIPC->getSocket1JsonReply("workspaces");
   auto const clientsJson = gIPC->getSocket1JsonReply("clients");
 
+  if (barScroll()) {
+    auto &window = const_cast<Bar &>(m_bar).window;
+    window.add_events(Gdk::SCROLL_MASK | Gdk::SMOOTH_SCROLL_MASK);
+    window.signal_scroll_event().connect(sigc::mem_fun(*this, &Workspaces::handleScroll));
+  }
+
   for (Json::Value workspaceJson : workspacesJson) {
     std::string workspaceName = workspaceJson["name"].asString();
     if ((allOutputs() || m_bar.output->name == workspaceJson["monitor"].asString()) &&
@@ -575,6 +581,7 @@ auto Workspaces::parseConfig(const Json::Value &config) -> void {
   populateBoolConfig(config, "special-visible-only", m_specialVisibleOnly);
   populateBoolConfig(config, "active-only", m_activeOnly);
   populateBoolConfig(config, "move-to-monitor", m_moveToMonitor);
+  populateBoolConfig(config, "enable-bar-scroll", m_barScroll);
 
   m_persistentWorkspaceConfig = config.get("persistent-workspaces", Json::Value());
   populateSortByConfig(config);
@@ -903,6 +910,37 @@ int Workspaces::windowRewritePriorityFunction(std::string const &window_rule) {
     return 1;
   }
   return 0;
+}
+
+bool Workspaces::handleScroll(GdkEventScroll *e) {
+  if (gdk_event_get_pointer_emulated((GdkEvent *)e)) {
+    /**
+     * Ignore emulated scroll events on window
+     */
+    return false;
+  }
+  auto dir = AModule::getScrollDir(e);
+  if (dir == SCROLL_DIR::NONE) {
+    return true;
+  }
+
+  bool increase;
+
+  if (dir == SCROLL_DIR::DOWN || dir == SCROLL_DIR::RIGHT) {
+    if (allOutputs()) {
+      gIPC->getSocket1Reply("dispatch workspace e+1");
+    } else {
+      gIPC->getSocket1Reply("dispatch workspace m+1");
+    }
+  } else if (dir == SCROLL_DIR::UP || dir == SCROLL_DIR::LEFT) {
+    if (allOutputs()) {
+      gIPC->getSocket1Reply("dispatch workspace e-1");
+    } else {
+      gIPC->getSocket1Reply("dispatch workspace m-1");
+    }
+  }
+
+  return true;
 }
 
 }  // namespace waybar::modules::hyprland
